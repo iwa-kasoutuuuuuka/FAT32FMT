@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Fat32Fmt.Cli/Fat32Fmt.Cli.csproj" />
+    <Project Path="src/Fat32Fmt.Core/Fat32Fmt.Core.csproj" />
+    <Project Path="src/Fat32Fmt.Gui/Fat32Fmt.Gui.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Fat32Fmt.Tests/Fat32Fmt.Tests.csproj" />
+  </Folder>
+</Solution>
