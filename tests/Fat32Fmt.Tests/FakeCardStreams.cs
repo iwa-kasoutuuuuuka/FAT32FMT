@@ -84,6 +84,11 @@ public sealed class FaultyStream : Stream
 
     public int WriteCount { get; private set; }
 
+    public int ReadCount { get; private set; }
+
+    /// <summary>失敗する読み取りが例外を投げるまでの遅延（応答の遅い不良区間の模擬）。</summary>
+    public TimeSpan FailDelay { get; init; }
+
     public override bool CanRead => true;
     public override bool CanSeek => true;
     public override bool CanWrite => _inner.CanWrite;
@@ -96,7 +101,12 @@ public sealed class FaultyStream : Stream
 
     public override int Read(Span<byte> buffer)
     {
-        if (Hits(Position, buffer.Length)) throw new IOException($"模擬の読み取りエラー (offset={Position})");
+        ReadCount++;
+        if (Hits(Position, buffer.Length))
+        {
+            if (FailDelay > TimeSpan.Zero) Thread.Sleep(FailDelay);
+            throw new IOException($"模擬の読み取りエラー (offset={Position})");
+        }
         return _inner.Read(buffer);
     }
 

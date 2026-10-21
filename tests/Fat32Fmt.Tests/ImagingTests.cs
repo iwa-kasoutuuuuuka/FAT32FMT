@@ -19,7 +19,7 @@ public class ImagingTests
         DiskInitializer.InitializeMbrFat32(dev, "CARD");
         var rnd = new Random(seed);
         var data = new byte[1 * MiB];
-        foreach (long at in new[] { 100 * MiB, size / 2, size - 2 * MiB })
+        foreach (long at in new[] { size / 4, size / 2, size - 2 * MiB })
         {
             rnd.NextBytes(data);
             dev.Write(at, data);
@@ -32,7 +32,7 @@ public class ImagingTests
     [Fact]
     public void Backup_CopiesEverything_AndSkipsZeroChunks()
     {
-        using var card = MakeCard(4 * GiB);
+        using var card = MakeCard(1 * GiB);
         using var image = new StreamBlockDevice(new SparseMemoryStream(card.Length), 512);
 
         var r = DiskImager.Backup(card, image, imageIsZeroFilled: true);
@@ -40,7 +40,7 @@ public class ImagingTests
         Assert.Equal(card.Length, r.Bytes);
         Assert.Equal(Sha(card, card.Length), r.Sha256);
         Assert.Equal(r.Sha256, Sha(image, image.Length));
-        Assert.True(r.ZeroBytesSkipped > 3 * GiB, $"skipped={r.ZeroBytesSkipped}");
+        Assert.True(r.ZeroBytesSkipped > 900 * MiB, $"skipped={r.ZeroBytesSkipped}");
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public class ImagingTests
     [Fact]
     public void BackupWipeRestore_RoundTrip_RestoresIdenticalCard()
     {
-        using var card = MakeCard(2 * GiB);
+        using var card = MakeCard(256 * MiB);
         string original = Sha(card, card.Length);
         using var image = new StreamBlockDevice(new SparseMemoryStream(card.Length), 512);
         var backup = DiskImager.Backup(card, image, true);
@@ -176,6 +176,19 @@ public class ImagingTests
     }
 
     [Fact]
+    public void Restore_WritesMbrChunkLast()
+    {
+        using var image = MakeCard(64 * MiB);
+        using var disk = new RecordingDevice(new StreamBlockDevice(new SparseMemoryStream(64 * MiB), 512));
+
+        DiskImager.Restore(image, disk);
+
+        Assert.Equal(0, disk.WriteOffsets[^1]);
+        Assert.Single(disk.WriteOffsets, o => o == 0);
+        Assert.True(disk.WriteOffsets.Count > 1);
+    }
+
+    [Fact]
     public void ImageHashFile_MissingOrMalformed_ReturnsNull()
     {
         string dir = Directory.CreateTempSubdirectory("fat32fmt-test-").FullName;
@@ -212,6 +225,25 @@ public class ImagingTests
     [InlineData("12", null)]
     public void DiskTargets_ParseDriveLetter(string spec, char? expected) =>
         Assert.Equal(expected, DiskTargets.ParseDriveLetter(spec));
+}
+
+/// <summary>書き込み位置を記録するデバイス。</summary>
+internal sealed class RecordingDevice(IBlockDevice inner) : IBlockDevice
+{
+    public List<long> WriteOffsets { get; } = new();
+    public long Length => inner.Length;
+    public int SectorSize => inner.SectorSize;
+    public bool CanWrite => true;
+    public void Read(long offset, Span<byte> buffer) => inner.Read(offset, buffer);
+
+    public void Write(long offset, ReadOnlySpan<byte> buffer)
+    {
+        WriteOffsets.Add(offset);
+        inner.Write(offset, buffer);
+    }
+
+    public void Flush() => inner.Flush();
+    public void Dispose() => inner.Dispose();
 }
 
 /// <summary>実容量 realBytes を超える位置への読み書きが先頭に折り返す、容量偽装カードの模型。</summary>

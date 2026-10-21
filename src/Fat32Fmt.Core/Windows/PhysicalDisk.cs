@@ -130,6 +130,11 @@ public static class DiskTargets
             .Select(v => (v, DiskNative.DriveLettersOf(v)))
             .ToList();
 
+    /// <summary>パーティションの無いカードに Windows がドライブ文字を付けたときの説明（消去後の正常な状態）。</summary>
+    public static string SuperfloppyNote(IEnumerable<char> letters) =>
+        $"パーティションの無いカードは、Windows がディスク全体を未フォーマットのボリューム {string.Join(", ", letters.Select(l => l + ":"))} として表示します（正常）。" +
+        "使うには wipe に --format を付けて MBR + FAT32 で初期化するか、イメージを書き戻してください。";
+
     /// <summary>書き込み後、Windows がボリュームを認識してドライブ文字を割り当てるのを待つ。</summary>
     public static IReadOnlyList<char> WaitForLetters(int diskNumber, TimeSpan timeout)
     {
@@ -333,6 +338,22 @@ public sealed class PhysicalDisk : IBlockDevice
 
     public void Flush() => _io.Flush();
 
+    /// <summary>
+    /// パーティションテーブルを削除したことを Windows に伝える（IOCTL_DISK_DELETE_DRIVE_LAYOUT。MBR の署名 55 AA も消える）。
+    /// パーティションを作らない消去の最後に呼び、パーティションマネージャが古いレイアウトを持ち越さないようにする。
+    /// なお、パーティションの無いリムーバブルディスクは Windows がディスク全体を 1 つのボリューム（スーパーフロッピー、
+    /// オフセット 0）として見せるので、ドライブ文字は消えない（正常な動作）。
+    /// </summary>
+    public void DeletePartitionTable(Action<string>? log = null)
+    {
+        if (!CanWrite) throw new InvalidOperationException("読み取り専用で開いたディスクです。");
+        _io.Flush();
+        if (Native.Ioctl(_io.Handle, DiskNative.IOCTL_DISK_DELETE_DRIVE_LAYOUT))
+            log?.Invoke("パーティションテーブルを削除しました（Windows に「パーティションなし」と通知）。");
+        else
+            log?.Invoke($"警告: パーティションテーブル削除の通知に失敗しました (Win32 エラー {Marshal.GetLastWin32Error()})。");
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -340,9 +361,11 @@ public sealed class PhysicalDisk : IBlockDevice
         if (CanWrite)
         {
             _io.Flush();
+            // 古いボリュームのロックを先に外してから再読込させる（ロック中だと古いパーティションが残ることがある）
+            ReleaseVolumes(_volumes, dismount: true);
             Native.Ioctl(_io.Handle, Native.IOCTL_DISK_UPDATE_PROPERTIES); // 新しいパーティションテーブルを読み直させる
         }
         _io.Dispose();
-        ReleaseVolumes(_volumes, dismount: CanWrite);
+        ReleaseVolumes(_volumes, dismount: false);
     }
 }

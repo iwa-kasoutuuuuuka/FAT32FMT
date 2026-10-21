@@ -232,6 +232,58 @@ public class DiagnosticsTests
         Assert.Contains("打ち切り", r.Summary);
     }
 
+    [Fact]
+    public void Scan_SlowFailingRegion_IsMarkedWholeWithoutPerSectorRetries()
+    {
+        // 実カードでは失敗する読み取り 1 回に ~83 秒かかった。セクタごとに読み直すと 1 区間で 2048 回になる
+        var faulty = new FaultyStream(new MemoryStream(new byte[4 * MiB], writable: false), new[] { (2L * MiB + 4096, 512L) })
+        {
+            FailDelay = TimeSpan.FromMilliseconds(40),
+        };
+        using var dev = new StreamBlockDevice(faulty, 512);
+        var r = SurfaceScanner.Run(dev, new SurfaceScanOptions { SlowErrorThreshold = TimeSpan.FromMilliseconds(20) });
+        Assert.True(r.Completed);
+        Assert.Equal(4, faulty.ReadCount);                       // 区間ごとに 1 回だけ。遅い失敗は分割しない
+        Assert.Equal(1, r.SlowErrors);
+        Assert.Equal(new[] { new ByteRange(2L * MiB, MiB) }, r.BadRanges);
+        Assert.Equal(2048, r.BadSectors);
+        Assert.Contains("まとめて不良", r.Summary);
+    }
+
+    [Fact]
+    public void Scan_FastSingleBadSector_IsFoundByBisection()
+    {
+        var faulty = new FaultyStream(new MemoryStream(new byte[4 * MiB], writable: false), new[] { (MiB + 777L * 512, 512L) });
+        using var dev = new StreamBlockDevice(faulty, 512);
+        var r = SurfaceScanner.Run(dev);
+        Assert.Equal(new[] { new ByteRange(MiB + 777L * 512, 512) }, r.BadRanges);
+        Assert.Equal(0, r.SlowErrors);
+        // 4 区間 + 二分探索（2048 セクタ → 11 段 × 2 回）。旧実装は 4 + 2048 回
+        Assert.InRange(faulty.ReadCount, 5, 4 + 2 * 11);
+    }
+
+    [Fact]
+    public void Scan_StopsWhenErrorHandlingTimeIsExhausted()
+    {
+        var faulty = new FaultyStream(new MemoryStream(new byte[64 * MiB], writable: false), new[] { (MiB + 512L, 512L), (8L * MiB, 56L * MiB) })
+        {
+            FailDelay = TimeSpan.FromMilliseconds(30),
+        };
+        using var dev = new StreamBlockDevice(faulty, 512);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var r = SurfaceScanner.Run(dev, new SurfaceScanOptions
+        {
+            SlowErrorThreshold = TimeSpan.FromMilliseconds(10),
+            MaxErrorHandlingTime = TimeSpan.FromMilliseconds(150),
+            MaxConsecutiveBadChunks = 1000,
+        });
+        Assert.False(r.Completed);
+        Assert.True(r.ScannedBytes < 64L * MiB);
+        Assert.True(r.ErrorHandlingTime >= TimeSpan.FromMilliseconds(150));
+        Assert.Contains("エラー処理", r.Summary);
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(10));
+    }
+
     // ---- 速度測定 -----------------------------------------------------------------
 
     private static BenchmarkOptions FastBench(bool write) => new()

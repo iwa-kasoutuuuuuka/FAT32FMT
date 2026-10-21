@@ -10,6 +10,8 @@ namespace Fat32Fmt.Core.Windows;
 internal static class DiskNative
 {
     public const uint IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS = 0x00560000;
+    /// <summary>MBR の署名を消し、パーティションマネージャのレイアウトを「パーティションなし」にする（diskpart clean と同じ）。</summary>
+    public const uint IOCTL_DISK_DELETE_DRIVE_LAYOUT = 0x0007C100;
     private static readonly IntPtr InvalidHandle = new(-1);
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, ExactSpelling = true)]

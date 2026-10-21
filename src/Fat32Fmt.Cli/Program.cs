@@ -332,7 +332,7 @@ internal static class Program
               backup   カード全体（物理ディスク）を .img に保存（スパースファイル）。SHA-256 を <img>.sha256 に記録
               restore  .img をカード全体に書き戻し、読み戻した内容を SHA-256 で照合（確認入力あり）
               wipe     カード全体を 0（既定）または乱数 (--random) で --passes 回上書き（確認入力あり）
-                       パーティションも消えるので、--format で MBR + FAT32 を作り直せる
+                       パーティションも消えるので、通常は --format を付けて MBR + FAT32 で作り直す（推奨）
               recover  削除ファイルを探して --to のフォルダ（復旧元とは別のドライブ）へ取り出す
                        連続クラスタを仮定。既定では上書き済みのものは除外（--all で含める）
               ※ backup / restore / wipe とドライブからの recover は管理者権限が必要（無ければ UAC で昇格）

@@ -40,6 +40,7 @@ public static class DiagnosticReportText
         if (r.ReadErrors + r.WriteErrors > 0) lines.Add($"I/O エラー         : 読み取り {r.ReadErrors} 区間、書き込み {r.WriteErrors} 区間");
         if (r.MismatchSectors > 0) lines.Add($"内容不一致         : {r.MismatchSectors:N0} セクタ");
         if (r.SlowChunks > 0) lines.Add($"遅い区間           : {r.SlowChunks} か所");
+        if (r.SlowErrors > 0) lines.Add($"応答の遅いエラー   : {r.SlowErrors} 回（エラー処理に計 {r.ErrorHandlingTime.TotalSeconds:0} 秒）");
         lines.Add($"平均速度           : {SizeFormat.Speed(r.BytesPerSecond)}");
         lines.Add($"所要時間           : {Duration(r.Elapsed)}");
         AddRanges(lines, r.BadRanges, r.BadRangeCount);
@@ -77,7 +78,7 @@ public static class DiagnosticReportText
     };
 
     private static string Line(BenchmarkResult b, bool iops) =>
-        $"{b.Name,-12}: {SizeFormat.Speed(b.BytesPerSecond),11}" + (iops ? $"  {b.Iops,7:0} IOPS" : "") +
+        $"{b.Name}: {SizeFormat.Speed(b.BytesPerSecond)}" + (iops ? $"  {b.Iops:0} IOPS" : "") +
         $"  ({SizeFormat.Binary(b.Bytes)} / {b.Elapsed.TotalSeconds:0.0} 秒)";
 
     private static void AddRanges(List<string> lines, IReadOnlyList<ByteRange> ranges, int total)

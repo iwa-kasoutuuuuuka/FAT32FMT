@@ -19,6 +19,8 @@ public sealed class MainForm : Form
     private readonly TextBox _txtInfo = new() { Multiline = true, ReadOnly = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical, Font = MonoFont(), WordWrap = false };
     private readonly Button _btnFormat = new() { Text = "フォーマット開始(&F)", AutoSize = true, Padding = new Padding(12, 4, 12, 4) };
     private readonly Button _btnCancel = new() { Text = "中止", AutoSize = true, Enabled = false };
+    private readonly Button _btnDiagnostics = new() { Text = "検査(&T)...", AutoSize = true, Margin = new Padding(24, 0, 0, 0) };
+    private readonly Button _btnData = new() { Text = "データ管理(&M)...", AutoSize = true, Margin = new Padding(8, 0, 0, 0) };
     private readonly ProgressBar _progress = new() { Dock = DockStyle.Fill, Minimum = 0, Maximum = 1000 };
     private readonly Label _lblStatus = new() { AutoSize = true, Text = "準備完了" };
     private readonly TextBox _txtLog = new() { Multiline = true, ReadOnly = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical, Font = MonoFont() };
@@ -88,6 +90,8 @@ public sealed class MainForm : Form
         _txtLabel.TextChanged += (_, _) => UpdateInfo();
         _btnFormat.Click += async (_, _) => await StartFormatAsync();
         _btnCancel.Click += (_, _) => _cts?.Cancel();
+        _btnDiagnostics.Click += (_, _) => OpenDiagnostics();
+        _btnData.Click += (_, _) => OpenDataManager();
         _deviceChangeTimer.Tick += (_, _) => { _deviceChangeTimer.Stop(); if (_cts == null) RefreshDrives(); };
         FormClosing += OnFormClosing;
         Load += (_, _) =>
@@ -145,6 +149,8 @@ public sealed class MainForm : Form
         _btnFormat.Margin = new Padding(0, 0, 8, 0);
         btnPanel.Controls.Add(_btnFormat);
         btnPanel.Controls.Add(_btnCancel);
+        btnPanel.Controls.Add(_btnDiagnostics);
+        btnPanel.Controls.Add(_btnData);
         AddRow("", btnPanel);
         AddRow("進行状況:", _progress, 28);
         AddRow("", _lblStatus);
@@ -340,7 +346,29 @@ public sealed class MainForm : Form
             _txtLabel.Enabled = _chkQuick.Enabled = _chkPtype.Enabled = !busy;
         _btnFormat.Enabled = !busy && VolumeFormatService.IsElevated();
         _btnCancel.Enabled = busy;
+        _btnDiagnostics.Enabled = !busy;
+        _btnData.Enabled = !busy;
         UseWaitCursor = busy;
+    }
+
+    /// <summary>バックアップ / 書き戻し / 消去 / 削除ファイル復旧のダイアログを開く。</summary>
+    private void OpenDataManager()
+    {
+        using var dlg = new DataForm(SelectedDrive?.Letter);
+        dlg.ShowDialog(this);
+        RefreshDrives();
+    }
+
+    /// <summary>選択中のドライブの検査ダイアログ（速度・不良セクタ・容量偽装）を開く。</summary>
+    private void OpenDiagnostics()
+    {
+        var d = SelectedDrive;
+        if (d == null) { MessageBox.Show(this, "ドライブを選択してください。", Text, MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+        using var dlg = new DiagnosticsDialog(d);
+        dlg.ShowDialog(this);
+        if (dlg.DestroyedData)
+            Log($"{d.Letter}: は検査パターンで上書きされました。使う前にフォーマットしてください。");
+        RefreshDrives();
     }
 
     private void Log(string s)

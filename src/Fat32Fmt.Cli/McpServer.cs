@@ -50,7 +50,7 @@ internal static partial class McpServer
                 {
                     "initialize" => Result(id, Initialize(@params)),
                     "ping" => Result(id, new JsonObject()),
-                    "tools/list" => Result(id, new JsonObject { ["tools"] = AddDiagnosticTools(ToolDefinitions()) }),
+                    "tools/list" => Result(id, new JsonObject { ["tools"] = AddDataTools(AddDiagnosticTools(ToolDefinitions())) }),
                     "tools/call" => Result(id, CallTool(@params)),
                     "resources/list" => Result(id, new JsonObject { ["resources"] = new JsonArray() }),
                     "prompts/list" => Result(id, new JsonObject { ["prompts"] = new JsonArray() }),
@@ -87,7 +87,9 @@ internal static partial class McpServer
                 "FAT32 formatter for large (>32GB) SD cards on Windows. " +
                 "Call list_drives first, then plan_format to show the user what will happen, " +
                 "and call format_drive ONLY after the human user has explicitly confirmed the target drive letter. " +
-                "format_drive destroys all data on the drive and triggers a Windows UAC prompt that the user must accept.",
+                "format_drive destroys all data on the drive and triggers a Windows UAC prompt that the user must accept. " +
+                "Suggest backup_disk before destructive operations; restore_image and wipe_disk also need explicit human confirmation. " +
+                "recover_deleted must save to a different drive than the source.",
         };
     }
 
@@ -162,6 +164,7 @@ internal static partial class McpServer
                 "plan_format" => ToolPlan(args),
                 "format_drive" => ToolFormat(args),
                 _ when DiagnosticToolNames.Contains(name) => CallDiagnosticTool(name, args),
+                _ when DataToolNames.Contains(name) => CallDataTool(name, args),
                 _ => ToolError($"Unknown tool: {name}"),
             };
         }

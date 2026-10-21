@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using Fat32Fmt.Core.IO;
 
 namespace Fat32Fmt.Core.Fat32;
@@ -19,6 +20,15 @@ public sealed class Fat32FormatOptions
     public ushort SectorsPerTrack { get; init; } = 63;
 
     public ushort Heads { get; init; } = 255;
+
+    /// <summary>
+    /// フルフォーマットで、失敗するまでにこれ以上かかった区間は切り分けずに丸ごと不良にする。
+    /// 不良ブロックではドライバーが 1 回の I/O に 1 分以上リトライすることがあり、クラスタ単位で試すと何時間もかかるため。
+    /// </summary>
+    public TimeSpan SlowFailureThreshold { get; init; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>失敗に時間がかかる区間がこの回数続いたら、カードが応答しないとみなして中止する。</summary>
+    public int MaxConsecutiveSlowFailures { get; init; } = 8;
 }
 
 public sealed record Fat32FormatResult(Fat32Layout Layout, IReadOnlyList<uint> BadClusters, uint VolumeId)
@@ -60,7 +70,7 @@ public static class Fat32Formatter
 
         // フル: 先にデータ領域を検査して不良クラスタを集める(FAT に反映するため)
         var badClusters = options.FullFormat
-            ? ScanDataArea(volume, layout, progress, ct)
+            ? ScanDataArea(volume, layout, options, progress, ct)
             : new List<uint>();
         if (badClusters.Contains(Fat32BootSector.RootCluster))
         {
@@ -152,7 +162,7 @@ public static class Fat32Formatter
     }
 
     /// <summary>データ領域に 0 を書いて読み戻し、異常のあるクラスタ番号を返す。</summary>
-    private static List<uint> ScanDataArea(IBlockDevice volume, Fat32Layout layout,
+    private static List<uint> ScanDataArea(IBlockDevice volume, Fat32Layout layout, Fat32FormatOptions options,
         IProgress<OperationProgress>? progress, CancellationToken ct)
     {
         int clusterBytes = layout.BytesPerCluster;
@@ -163,28 +173,69 @@ public static class Fat32Formatter
         long dataLen = layout.DataBytes;
         var tracker = new ProgressTracker(progress, "データ領域の書き込み検査", dataLen);
 
+        int consecutiveSlow = 0;
         for (long pos = 0; pos < dataLen; pos += chunk)
         {
             ct.ThrowIfCancellationRequested();
             int n = (int)Math.Min(chunk, dataLen - pos);
             long offset = layout.DataStartOffset + pos;
-            if (!TryWriteVerify(volume, offset, zeros.AsSpan(0, n), read.AsSpan(0, n)))
+            var t = Stopwatch.StartNew();
+            if (TryWriteVerify(volume, offset, zeros.AsSpan(0, n), read.AsSpan(0, n)))
             {
-                // チャンク単位で失敗したらクラスタ単位で切り分ける
-                for (int c = 0; c < n; c += clusterBytes)
+                consecutiveSlow = 0;
+            }
+            else if (t.Elapsed >= options.SlowFailureThreshold)
+            {
+                // 失敗に時間がかかる（ドライバーが長くリトライする）領域は、細かく切り分けると
+                // 1 区間で何時間もかかるため、区間全体を不良として次へ進む
+                MarkBad(bad, pos, n, clusterBytes);
+                if (++consecutiveSlow >= options.MaxConsecutiveSlowFailures)
                 {
-                    if (!TryWriteVerify(volume, offset + c, zeros.AsSpan(0, clusterBytes), read.AsSpan(0, clusterBytes)))
-                    {
-                        bad.Add((uint)(2 + (pos + c) / clusterBytes));
-                    }
+                    throw new IOException(
+                        $"データ領域の {SizeFormat.Binary(pos)} 付近から先が応答しません（失敗に時間がかかる区間が {consecutiveSlow} 回続きました）。" +
+                        "カードかカードリーダーの故障が疑われます。");
                 }
+            }
+            else
+            {
+                consecutiveSlow = 0;
+                // すぐ失敗する場合は二分探索でクラスタ単位まで切り分ける（不良 1 個あたり約 log2 回の試行で済む）
+                Bisect(volume, layout, pos, n, clusterBytes, zeros, read, bad, options.SlowFailureThreshold);
             }
 
             tracker.Report(pos + n);
         }
 
         tracker.Complete();
+        bad.Sort();
         return bad;
+    }
+
+    private static void Bisect(IBlockDevice volume, Fat32Layout layout, long pos, int length, int clusterBytes,
+        byte[] zeros, byte[] read, List<uint> bad, TimeSpan slow)
+    {
+        if (length <= clusterBytes)
+        {
+            MarkBad(bad, pos, length, clusterBytes);
+            return;
+        }
+
+        int half = length / 2 / clusterBytes * clusterBytes;
+        foreach (var (p, n) in new[] { (pos, half), (pos + half, length - half) })
+        {
+            var t = Stopwatch.StartNew();
+            if (TryWriteVerify(volume, layout.DataStartOffset + p, zeros.AsSpan(0, n), read.AsSpan(0, n))) continue;
+            if (t.Elapsed >= slow) MarkBad(bad, p, n, clusterBytes);
+            else Bisect(volume, layout, p, n, clusterBytes, zeros, read, bad, slow);
+        }
+    }
+
+    private static void MarkBad(List<uint> bad, long pos, int length, int clusterBytes)
+    {
+        for (long c = 0; c < length; c += clusterBytes)
+        {
+            bad.Add((uint)(2 + (pos + c) / clusterBytes));
+        }
     }
 
     private static bool TryWriteVerify(IBlockDevice volume, long offset, ReadOnlySpan<byte> data, Span<byte> read)

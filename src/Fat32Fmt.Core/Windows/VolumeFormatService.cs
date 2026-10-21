@@ -121,6 +121,9 @@ public static class VolumeFormatService
         char letter = entry.Letter;
 
         log?.Invoke($"対象: {entry.Display}");
+        if (entry.IsSuperFloppy)
+            log?.Invoke($"注意: ドライブ {letter}: にはパーティション表がありません（ディスク全体を 1 ボリュームとして使う形式）。" +
+                        $"このままフォーマットしますが、SD 規格どおりの MBR 形式にするには `fat32fmt wipe disk{entry.DiskNumber} --format` を使ってください。");
         log?.Invoke($"ボリューム {letter}: をロックしてマウント解除します...");
 
         Fat32FormatResult fmt;

@@ -29,6 +29,12 @@ public sealed record DriveEntry
 
     public bool IsRemovable => Kind == DriveKind.Removable;
 
+    /// <summary>
+    /// パーティション表が無く、Windows がディスク全体を 1 つのボリュームとして見せている（スーパーフロッピー形式）。
+    /// 消去後のカードなど。Windows はこの場合も開始位置 0 の疑似パーティションとドライブ文字を出す。
+    /// </summary>
+    public bool IsSuperFloppy => DiskNumber >= 0 && PartitionOffset == 0 && SizeBytes > 0;
+
     /// <summary>カード規格の目安（ディスク容量 ≒ パーティション開始 + サイズ）。</summary>
     public string CapacityClass => SdCardGeometry.CapacityClass(PartitionOffset + SizeBytes);
 
@@ -61,7 +67,10 @@ public sealed record DriveEntry
         };
         if (DiskNumber >= 0)
             lines.Add($"物理ディスク      : Disk {DiskNumber}, パーティション {PartitionNumber}, オフセット {SizeFormat.Binary(PartitionOffset)}");
-        lines.Add(PartitionStyle switch
+        lines.Add(IsSuperFloppy
+            ? "パーティション    : なし（ディスク全体を 1 ボリュームとして使う形式）" + Environment.NewLine +
+              $"                    ※ SD 規格どおりの MBR 形式にするには `fat32fmt wipe disk{DiskNumber} --format` を使ってください（機器によってはこの形式を認識しません）"
+            : PartitionStyle switch
         {
             PartitionStyle.Mbr => $"パーティション    : MBR  種別 0x{MbrPartitionType:X2}{MbrTypeName(MbrPartitionType)}",
             PartitionStyle.Gpt => "パーティション    : GPT",

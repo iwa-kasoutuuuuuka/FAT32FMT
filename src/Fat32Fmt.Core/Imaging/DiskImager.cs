@@ -123,6 +123,7 @@ public static class DiskImager
         using var written = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         using var full = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var buf = new byte[BlockDeviceExtensions.ChunkSize];
+        byte[]? head = null;
         var tracker = new ProgressTracker(progress, "書き戻し", writeLength);
         for (long off = 0; off < writeLength;)
         {
@@ -132,9 +133,24 @@ public static class DiskImager
             image.Read(off, chunk);
             written.AppendData(chunk);
             full.AppendData(chunk);
-            disk.Write(off, chunk);
+            if (off == 0)
+            {
+                // 先頭(MBR とパーティションの先頭)は最後に書く。途中で中止・失敗したとき、
+                // 書きかけのパーティションを Windows がマウントしないようにするため
+                head = chunk.ToArray();
+            }
+            else
+            {
+                disk.Write(off, chunk);
+            }
+
             off += n;
             tracker.Report(off);
+        }
+
+        if (head != null)
+        {
+            disk.Write(0, head);
         }
 
         disk.Flush();

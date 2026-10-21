@@ -18,7 +18,7 @@ public class RecoveryTests : IDisposable
 
     public RecoveryTests()
     {
-        _dev = new StreamBlockDevice(new SparseMemoryStream(256 * MiB), 512);
+        _dev = new StreamBlockDevice(new SparseMemoryStream(512 * MiB), 512);
         var layout = Fat32LayoutCalculator.Calculate(_dev.Length, 512, 4096, 0, 0);
         Fat32Formatter.Format(_dev, layout, new Fat32FormatOptions());
         _w = new FatImageWriter(_dev);
@@ -154,11 +154,11 @@ public class RecoveryTests : IDisposable
     {
         // 実際の使い方: カードを backup した .img から取り出す
         string img = Path.Combine(_out, "card.img");
-        using (var disk = StreamBlockDevice.CreateImage(img, 300 * MiB))
+        using (var disk = StreamBlockDevice.CreateImage(img, 600 * MiB))
         {
-            var part = new SubBlockDevice(disk, 4 * MiB, 256 * MiB);
+            var part = new SubBlockDevice(disk, 4 * MiB, 512 * MiB);
             Fat32Formatter.Format(part, Fat32LayoutCalculator.Calculate(part.Length, 512, 4096, 4 * MiB, 0), new Fat32FormatOptions());
-            disk.Write(0, MbrBuilder.Build(512, 4 * MiB, 256 * MiB, PartitionPlanner.Fat32LbaType, 1));
+            disk.Write(0, MbrBuilder.Build(512, 4 * MiB, 512 * MiB, PartitionPlanner.Fat32LbaType, 1));
             var w = new FatImageWriter(part);
             w.Delete(w.AddFile(w.Root, "memo.txt", "MEMO    TXT", Encoding.UTF8.GetBytes("メモ")));
         }

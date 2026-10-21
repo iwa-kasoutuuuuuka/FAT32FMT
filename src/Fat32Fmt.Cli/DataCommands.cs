@@ -333,12 +333,19 @@ internal static class DataCommands
                 var init = DiskInitializer.InitializeMbrFat32(disk, o.Label, progress, ct);
                 log($"MBR + FAT32 パーティションを作成しました（開始 {SizeFormat.Binary(init.Partition.StartBytes)}、クラスタ {SizeFormat.Cluster(init.Format.Layout.BytesPerCluster)}）。");
             }
+            else disk.DeletePartitionTable(log);
         }
         IReadOnlyList<char> letters = Array.Empty<char>();
         if (o.FormatAfter)
         {
             log("Windows がボリュームを認識するのを待っています...");
             letters = DiskTargets.WaitForLetters(info.DiskNumber, TimeSpan.FromSeconds(15));
+        }
+        else
+        {
+            // パーティションの無いリムーバブルディスクは、Windows がディスク全体を 1 つのボリューム（スーパーフロッピー）として見せる
+            letters = DiskTargets.WaitForLetters(info.DiskNumber, TimeSpan.FromSeconds(5));
+            if (letters.Count > 0) log(DiskTargets.SuperfloppyNote(letters));
         }
         return new WipeSummary(info.DiskNumber, r.Bytes, r.Passes, r.Pattern, r.Verified, o.FormatAfter, r.Elapsed.TotalSeconds, letters);
     }
@@ -424,7 +431,9 @@ internal static class DataCommands
                 if (s.Formatted)
                     Console.WriteLine(s.Letters.Count > 0 ? $"FAT32 で初期化しました: {string.Join(", ", s.Letters.Select(l => l + ":"))}" : "FAT32 で初期化しました（ドライブ文字はまだ割り当てられていません）。");
                 else
-                    Console.WriteLine($"パーティションも消えています。使うには `fat32fmt restore <img> disk{s.Disk}` で書き戻すか、`fat32fmt wipe disk{s.Disk} --format` で初期化してください。");
+                    Console.WriteLine(
+                        $"パーティションも消えています{(s.Letters.Count > 0 ? $"（Windows はディスク全体を未フォーマットのボリューム {string.Join(", ", s.Letters.Select(l => l + ":"))} として表示します。正常です）" : "")}。" +
+                        $"使うには `fat32fmt restore <img> disk{s.Disk}` で書き戻すか、`fat32fmt wipe disk{s.Disk} --format` で MBR + FAT32 に初期化してください（次回からは wipe に --format を付けるのがおすすめです）。");
                 break;
             }
             case "recover":
