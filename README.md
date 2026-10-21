@@ -8,6 +8,27 @@ Windows 標準のフォーマット機能は 32 GB を超えるボリューム�
 - **CLI**（`fat32fmt.exe`）: スクリプトや AI エージェントから使う。JSON 出力対応。
 - **MCP サーバー**（`fat32fmt.exe mcp`）: Claude Code / Antigravity などから直接ツールとして呼べる。
 
+リポジトリ: <https://github.com/iwa-kasoutuuuuuka/FAT32FMT>
+
+## ダウンロード
+
+ビルド済みのバイナリは [Releases](https://github.com/iwa-kasoutuuuuuka/FAT32FMT/releases/latest) から入手できます（Windows 10 / 11 x64）。
+
+| ファイル | 内容 |
+| --- | --- |
+| [FAT32FMT-v1.0.0-win-x64.zip](https://github.com/iwa-kasoutuuuuuka/FAT32FMT/releases/download/v1.0.0/FAT32FMT-v1.0.0-win-x64.zip)（約 86 MB） | **通常はこちら。** .NET ランタイムを同梱した単体実行ファイル。インストール不要 |
+| [FAT32FMT-v1.0.0-win-x64-framework-dependent.zip](https://github.com/iwa-kasoutuuuuuka/FAT32FMT/releases/download/v1.0.0/FAT32FMT-v1.0.0-win-x64-framework-dependent.zip)（約 350 KB） | 軽量版。[.NET 8 デスクトップ ランタイム](https://dotnet.microsoft.com/download/dotnet/8.0)（x64）が必要 |
+
+zip を展開すると次の構成になります。GUI の `FAT32FMT.exe` と CLI の `fat32fmt.exe` は Windows では大文字小文字を区別しないため同じ名前になるので、フォルダを分けています。
+
+```
+GUI\FAT32FMT.exe    GUI アプリ（ダブルクリックで起動。UAC で「はい」）
+CLI\fat32fmt.exe    CLI / MCP サーバー
+LICENSE
+```
+
+SmartScreen の警告が出た場合は「詳細情報」→「実行」で起動できます（コード署名はしていません）。
+
 ## 特徴
 
 | 項目 | 内容 |
@@ -66,6 +87,16 @@ dotnet build FAT32FMT.slnx -c Release
 dotnet test FAT32FMT.slnx
 ```
 
+配布用の単体実行ファイル（Releases の zip と同じもの）を作る場合:
+
+```powershell
+# ランタイム同梱版（GUI と CLI は同名になるので出力先を分ける）
+dotnet publish src\Fat32Fmt.Gui -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none -o publish\GUI
+dotnet publish src\Fat32Fmt.Cli -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none -o publish\CLI
+```
+
+軽量版は `--self-contained true` 以降のランタイム関連の指定を `-p:SelfContained=false -p:PublishSingleFile=true -p:DebugType=none` に置き換えます。同じフォルダでランタイム同梱版を作った直後は `obj` の中間ファイルが再利用されて同梱版になってしまうことがあるため、`-p:IntermediateOutputPath=obj\fd\ -p:OutputPath=bin\fd\` のように中間フォルダを分けてください。
+
 ## GUI の使い方
 
 1. `FAT32FMT.exe` を起動（UAC が出るので「はい」）。
@@ -92,12 +123,17 @@ fat32fmt format E: --yes --json    # 確認なし・JSON 出力（自動化向�
 fat32fmt image disk.img --size 64G # イメージファイルを FAT32 化（テスト用。スパースファイルなので空き容量以上でも可）
 fat32fmt image sd.img --size 128000000000 --mbr  # SD カードと同じ MBR + パーティション形式で作成
 fat32fmt verify sd.img             # イメージの FAT32 構造を検査（異常があれば終了コード 1）
+fat32fmt version                   # バージョン表示
+fat32fmt --help                    # 全コマンドとオプションの一覧
 ```
 
 主なオプション: `--cluster 32K` `--label 名前` `--full`（全領域検査） `--no-ptype`（MBR 種別を変えない）
-`--allow-fixed`（固定ディスク許可） `--align 16M`（整列境界） `--json` `--yes`
+`--allow-fixed`（固定ディスク許可。`list` にも使える） `--align 16M`（整列境界。0 で無効） `--json` `--yes`
+`--offset <バイト数>`（`image` でパーティション開始位置を指定。`--mbr` とは併用不可）
 
-終了コード: 0=成功 1=エラー 2=使い方の誤り 3=キャンセル（UAC 拒否を含む）
+終了コード: 0=成功 1=エラー 2=使い方の誤り 3=キャンセル（UAC 拒否を含む） 4=検査で問題を検出（`test` / `bench`）
+
+> 「上書きフォーマット」（SD Memory Card Formatter の上書きフォーマットに相当）は、`fat32fmt wipe E: --format` で全域を上書きしてから MBR + FAT32 で初期化します（[バックアップ・消去・削除ファイルの復旧](#バックアップ消去削除ファイルの復旧)を参照）。
 
 管理者権限が無い場合、`format` は自分自身を UAC 昇格して起動し、結果を一時ファイル経由で受け取って表示します。
 AI エージェントから呼ばれた場合も **人間が UAC で承認しなければ書き込みは始まりません**。
@@ -176,6 +212,8 @@ fat32fmt recover D:\backup\card.img --to D:\recovered --match *.jpg   # バッ�
 | `restore_image` | イメージを書き戻して照合。`confirm: "RESTORE E"`（ディスク番号指定なら `"RESTORE DISK2"`）が必須 |
 | `wipe_disk` | 上書き消去（`passes` / `random` / `verify` / `format`）。`confirm: "WIPE E"` が必須 |
 | `recover_deleted` | 削除ファイルの一覧（`listOnly`）と別ドライブへの取り出し。ドライブまたはイメージファイルが対象 |
+
+以下の例はソースからビルドした場合のパスです。[Releases](https://github.com/iwa-kasoutuuuuuka/FAT32FMT/releases/latest) の zip を使う場合は、展開先の `CLI\fat32fmt.exe`（例: `C:\Tools\FAT32FMT\CLI\fat32fmt.exe`）に置き換えてください。
 
 **Claude Code**（プロジェクトまたはユーザースコープ）:
 
