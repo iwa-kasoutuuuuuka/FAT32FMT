@@ -17,7 +17,8 @@ public enum StorageBusType
 
 public sealed record StorageDeviceInfo(string Vendor, string Product, StorageBusType BusType, bool RemovableMedia)
 {
-    public string DisplayName => string.Join(' ', new[] { Vendor, Product }.Where(s => s.Length > 0));
+    /// <summary>ベンダー名・製品名は USB デバイス側が自由に返せるので無害化して表示する。</summary>
+    public string DisplayName => TextSanitizer.Clean(string.Join(' ', new[] { Vendor, Product }.Where(s => s.Length > 0)));
 }
 
 /// <summary>ボリュームの位置情報。</summary>

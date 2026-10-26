@@ -151,7 +151,7 @@ public static class DriveEnumerator
         var fs = new StringBuilder(261);
         if (Native.GetVolumeInformationW(root, lbl, 261, out _, out _, out _, fs, 261))
         {
-            label = lbl.ToString();
+            label = TextSanitizer.Clean(lbl.ToString()); // ラベルはカード側で自由に作れる
             fsName = fs.ToString();
         }
 
@@ -178,11 +178,10 @@ public static class DriveEnumerator
             DeviceName = dev?.DisplayName ?? "",
             BusType = dev?.BusType ?? StorageBusType.Unknown,
             IsSystemDrive = letter == SystemDriveLetter,
-            IsOnSystemDisk = geo is { DiskNumber: >= 0 } && geo.DiskNumber == SystemDiskNumber,
+            // Windows のあるディスクと起動用パーティションのあるディスク。判定できないときも保護側に倒す
+            IsOnSystemDisk = geo is { DiskNumber: >= 0 } && ProtectedDisks.IsProtected(geo.DiskNumber, ProtectedDisks.Query()),
             IsWriteProtected = kind is DriveKind.Removable or DriveKind.Fixed && VolumeQuery.TryQueryWriteProtected(letter) == true,
         };
     }
 
-    /// <summary>システムドライブがある物理ディスクの番号（取得できなければ -1）。</summary>
-    public static int SystemDiskNumber => VolumeQuery.TryQueryGeometry(SystemDriveLetter)?.DiskNumber ?? -1;
 }

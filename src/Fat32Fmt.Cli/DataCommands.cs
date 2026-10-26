@@ -104,8 +104,9 @@ internal static class DataCommands
         {
             case "backup":
                 Require(o.Positionals.Count == 2, "使い方: fat32fmt backup <X: | diskN> <出力.img>");
-                o.Disk = ResolveDisk(o, o.Positionals[0]);
                 o.ImagePath = Path.GetFullPath(o.Positionals[1]);
+                SafePaths.EnsureImageOutput(o.ImagePath); // 拡張子 .img のみ、Windows / Program Files などは不可
+                o.Disk = ResolveDisk(o, o.Positionals[0]);
                 if (File.Exists(o.ImagePath) && !o.Overwrite)
                     throw new UsageException($"{o.ImagePath} は既に存在します。上書きする場合は --overwrite を指定してください。");
                 if (Directory.Exists(o.ImagePath)) throw new UsageException($"{o.ImagePath} はフォルダです。イメージのファイル名を指定してください。");
@@ -118,6 +119,7 @@ internal static class DataCommands
                 Require(o.Positionals.Count == 2, "使い方: fat32fmt restore <入力.img> <X: | diskN>");
                 o.ImagePath = Path.GetFullPath(o.Positionals[0]);
                 if (!File.Exists(o.ImagePath)) throw new UsageException($"イメージが見つかりません: {o.ImagePath}");
+                SafePaths.EnsureImageInput(o.ImagePath); // 管理者権限で読むので、保護された場所のファイルは不可
                 o.Disk = ResolveDisk(o, o.Positionals[1]);
                 if (DiskTargets.DiskNumberOfPath(o.ImagePath) == o.Disk.DiskNumber)
                     throw new VolumeFormatException("イメージが書き戻し先と同じディスク上にあります。別のドライブにコピーしてから実行してください。");
@@ -154,6 +156,7 @@ internal static class DataCommands
                 {
                     if (o.Destination == null) throw new UsageException("復旧したファイルの保存先を --to <フォルダ> で指定してください（一覧だけなら --list）。");
                     o.Destination = Path.GetFullPath(o.Destination);
+                    SafePaths.EnsureOutputDirectory(o.Destination); // 管理者権限で書くので、保護された場所やネットワークは不可
                     if (o.SourceLetter is char sl && char.ToUpperInvariant(o.Destination[0]) == sl)
                         throw new VolumeFormatException("保存先が復旧元と同じドライブです。上書きで削除データが失われるため、別のドライブを指定してください。");
                     if (o.SourceDiskNumber >= 0 && DiskTargets.DiskNumberOfPath(o.Destination) == o.SourceDiskNumber)
@@ -279,12 +282,15 @@ internal static class DataCommands
         string path = o.ImagePath!;
         log($"バックアップ元: {info.Display}");
         using var disk = PhysicalDisk.Open(info.DiskNumber, writable: false, log);
-        if (o.Overwrite && File.Exists(path)) File.Delete(path);
+        SafePaths.EnsureImageOutput(path); // 書き込む直前にもう一度（確認後にリンクを差し替えられた場合に備える）
+        if (o.Overwrite && File.Exists(path)) File.Delete(path); // .img で保護された場所でないことは確認済み
+        bool created = false;
         try
         {
             ImageResult r;
             using (var image = SparseImage.Create(path, disk.Length, disk.SectorSize))
             {
+                created = true;
                 r = DiskImager.Backup(disk, image, imageIsZeroFilled: true, progress, ct);
             }
             ImageHashFile.Write(path, r.Sha256);
@@ -293,7 +299,7 @@ internal static class DataCommands
         }
         catch
         {
-            try { File.Delete(path); } catch { } // 作りかけのイメージを残さない
+            if (created) { try { File.Delete(path); } catch { } } // 作りかけのイメージを残さない（自分で作ったものだけ消す）
             throw;
         }
     }

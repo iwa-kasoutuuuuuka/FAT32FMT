@@ -64,6 +64,9 @@ public static class VolumeFormatService
         if (entry.IsSystemDrive) throw new VolumeFormatException($"ドライブ {letter}: はシステムドライブのためフォーマットできません。");
         if (entry.IsOnSystemDisk)
             throw new VolumeFormatException($"ドライブ {letter}: はシステムドライブと同じ物理ディスク (Disk {entry.DiskNumber}) 上にあるためフォーマットできません。");
+        if (entry.DiskNumber >= 0) ProtectedDisks.EnsureNotProtected(entry.DiskNumber);
+        else if (entry.Kind != DriveKind.Removable)
+            throw new VolumeFormatException($"ドライブ {letter}: の物理ディスクを特定できないため、安全のため対象にできません。");
         if (entry.Kind is DriveKind.Cdrom or DriveKind.Remote or DriveKind.RamDisk)
             throw new VolumeFormatException($"ドライブ {letter}: ({DriveEntry.KindName(entry.Kind)}) はフォーマット対象にできません。");
         if (entry.Kind == DriveKind.Fixed && !req.AllowFixedDisk)

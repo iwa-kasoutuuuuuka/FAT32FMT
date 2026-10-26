@@ -137,7 +137,7 @@ public sealed class DataForm : Form
         var browse = new Button { Text = "参照...", AutoSize = true };
         browse.Click += (_, _) =>
         {
-            using var dlg = new SaveFileDialog { Filter = "ディスクイメージ (*.img)|*.img|すべてのファイル|*.*", FileName = Path.GetFileName(_txtBackupPath.Text), OverwritePrompt = true };
+            using var dlg = new SaveFileDialog { Filter = "ディスクイメージ (*.img)|*.img", DefaultExt = "img", AddExtension = true, FileName = Path.GetFileName(_txtBackupPath.Text), OverwritePrompt = true };
             if (dlg.ShowDialog(this) == DialogResult.OK) _txtBackupPath.Text = dlg.FileName;
         };
         g.Controls.Add(Lbl("保存先(&O):"), 0, 0);
@@ -238,14 +238,12 @@ public sealed class DataForm : Form
     {
         int? keep = SelectedDisk?.DiskNumber;
         var list = new List<DiskInfo>();
-        int system = DriveEnumerator.SystemDiskNumber;
         for (int n = 0; n < 32; n++)
         {
-            if (n == system) continue;
             try
             {
                 var d = DiskTargets.Describe(n);
-                if (d.IsRemovable) list.Add(d);
+                if (d.IsRemovable && !d.IsSystemDisk) list.Add(d); // 保護対象のディスクは出さない
             }
             catch (VolumeFormatException) { }
         }

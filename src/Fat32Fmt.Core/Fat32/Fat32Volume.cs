@@ -171,13 +171,20 @@ public sealed class Fat32Volume
         return free;
     }
 
+    /// <summary>
+    /// FAT の仕様上、1 つのディレクトリは 65,536 エントリ (32 バイト × 65,536 = 2 MiB) までなので、それを超えては読まない。
+    /// 細工されたカードで巨大なクラスタチェーンを作られても、メモリを使い果たさないようにする。
+    /// </summary>
+    public const int MaxDirectoryBytes = 65536 * 32;
+
     /// <summary>ディレクトリのエントリを列挙する。</summary>
     /// <param name="clusters">ディレクトリを構成するクラスタ(通常は Chain の結果)。</param>
     /// <param name="includeDeleted">削除済みエントリも返すか。</param>
     public List<FatDirectoryEntry> ReadDirectory(IEnumerable<uint> clusters, bool includeDeleted)
     {
+        int maxClusters = Math.Max(1, MaxDirectoryBytes / Layout.BytesPerCluster);
         var data = new List<byte>();
-        foreach (uint c in clusters)
+        foreach (uint c in clusters.Take(maxClusters))
         {
             data.AddRange(ReadCluster(c));
         }
@@ -284,7 +291,9 @@ internal static class FatDirectoryParser
             }
 
             lfn.Clear();
-            string shortName = DecodeShortName(raw, e[12]);
+            // 名前はカードの作り手が自由に決められるので、制御文字・双方向制御文字をここで無害化する
+            string shortName = TextSanitizer.Clean(DecodeShortName(raw, e[12]));
+            longName = longName is null ? null : TextSanitizer.Clean(longName);
             uint cluster = ((uint)BinaryPrimitives.ReadUInt16LittleEndian(e[20..]) << 16)
                            | BinaryPrimitives.ReadUInt16LittleEndian(e[26..]);
             result.Add(new FatDirectoryEntry

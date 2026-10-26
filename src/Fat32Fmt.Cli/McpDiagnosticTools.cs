@@ -57,8 +57,8 @@ internal static partial class McpServer
         var o = new JsonObject
         {
             ["drive"] = Prop("string", "Drive letter, e.g. \"E\" or \"E:\"."),
-            ["allowFixed"] = Prop("boolean", "Allow a drive that Windows reports as a fixed disk. Dangerous; default false."),
         };
+        AddAllowFixedProp(o);
         foreach (var (name, schema) in extra) o[name] = schema;
         return o;
     }
@@ -80,7 +80,7 @@ internal static partial class McpServer
             "scan_drive" => write ? DiagnosticKind.ScanWrite : DiagnosticKind.ScanRead,
             _ => write ? DiagnosticKind.BenchWrite : DiagnosticKind.Bench,
         };
-        var req = new DiagnosticRequest { DriveLetter = letter, Kind = kind, AllowFixedDisk = args["allowFixed"]?.GetValue<bool>() ?? false };
+        var req = new DiagnosticRequest { DriveLetter = letter, Kind = kind, AllowFixedDisk = AllowFixedFrom(args) };
 
         if (req.IsDestructive)
         {

@@ -131,9 +131,10 @@ public class VerifierTests
     }
 
     [Fact]
-    public void SystemDiskNumber_IsKnown_AndSystemDriveIsOnIt()
+    public void SystemDisk_IsKnown_AndSystemDriveIsOnIt()
     {
-        Assert.True(DriveEnumerator.SystemDiskNumber >= 0);
+        var s = ProtectedDisks.Query();
+        Assert.NotEmpty(s.WindowsDisks);
         Assert.True(DriveEnumerator.Describe(DriveEnumerator.SystemDriveLetter).IsOnSystemDisk);
     }
 }

@@ -14,14 +14,17 @@ internal static partial class McpServer
         tools.Add(Tool("backup_disk",
             "Save the WHOLE card (physical disk: MBR + all partitions) to an image file, e.g. before wipe_disk or format_drive. " +
             "The image is written as an NTFS sparse file and its SHA-256 is stored next to it as <image>.sha256. Does not modify the card. " +
+            "The file name must end with .img and must not be inside Windows, Program Files or ProgramData (it is written with administrator rights). " +
+            "Requires `confirm` to be exactly \"BACKUP <target>\" (\"BACKUP E\" or \"BACKUP DISK2\"); pass it only after the human user approved the output path. " +
             "Requires administrator rights (UAC prompt when not elevated). Takes ~30 min for a 128GB card. カード全体を .img に保存します。",
             new JsonObject
             {
                 ["type"] = "object",
-                ["required"] = new JsonArray("drive", "image"),
+                ["required"] = new JsonArray("drive", "image", "confirm"),
                 ["properties"] = DataProps(
-                    ("image", Prop("string", "Output image path on a DIFFERENT drive, e.g. \"D:\\\\backup\\\\card.img\".")),
-                    ("overwrite", Prop("boolean", "Overwrite an existing image file. Default false."))),
+                    ("image", Prop("string", "Output image path (*.img) on a DIFFERENT drive, e.g. \"D:\\\\backup\\\\card.img\".")),
+                    ("overwrite", Prop("boolean", "Overwrite an existing image file. Default false.")),
+                    ("confirm", Prop("string", "Exactly \"BACKUP <target>\", e.g. \"BACKUP E\" or \"BACKUP DISK2\"."))),
             }));
         tools.Add(Tool("restore_image",
             "DESTRUCTIVE: write an image file back to the whole card, replacing everything on it, then read the card back and compare SHA-256. " +
@@ -81,8 +84,8 @@ internal static partial class McpServer
         var o = new JsonObject
         {
             ["drive"] = Prop("string", "Card to operate on: drive letter (\"E\" / \"E:\") or physical disk (\"disk2\") when the card has no drive letter."),
-            ["allowFixed"] = Prop("boolean", "Allow a disk that Windows reports as fixed (not removable). Dangerous; default false."),
         };
+        AddAllowFixedProp(o);
         foreach (var (name, schema) in extra) o[name] = schema;
         return o;
     }
@@ -97,9 +100,13 @@ internal static partial class McpServer
         switch (name)
         {
             case "backup_disk":
-                cli.AddRange(["backup", Required("drive"), Required("image")]);
+            {
+                string drive = Required("drive");
+                if (ConfirmError("BACKUP", drive, Str("confirm")) is { } err) return ToolError(err);
+                cli.AddRange(["backup", drive, Required("image")]);
                 if (Flag("overwrite")) cli.Add("--overwrite");
                 break;
+            }
             case "restore_image":
             {
                 string drive = Required("drive");
@@ -126,7 +133,7 @@ internal static partial class McpServer
                 if (Str("match") is { } m) { cli.Add("--match"); cli.Add(m); }
                 break;
         }
-        if (Flag("allowFixed")) cli.Add("--allow-fixed");
+        if (AllowFixedFrom(args)) cli.Add("--allow-fixed");
         cli.Add("--yes");
 
         DataOutcome outcome;
@@ -156,6 +163,6 @@ internal static partial class McpServer
                       : drive.Trim().ToUpperInvariant();
         string expected = $"{verb} {target}";
         return string.Equals(confirm?.Trim(), expected, StringComparison.Ordinal) ? null
-            : $"confirm must be exactly \"{expected}\". Ask the human user to approve this destructive operation on {drive} before calling this tool.";
+            : $"confirm must be exactly \"{expected}\". Ask the human user to approve this operation on {drive} before calling this tool.";
     }
 }

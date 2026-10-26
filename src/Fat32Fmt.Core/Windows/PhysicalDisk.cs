@@ -95,7 +95,7 @@ public static class DiskTargets
             DeviceName = dev?.DisplayName ?? "",
             BusType = dev?.BusType ?? StorageBusType.Unknown,
             IsRemovable = removable,
-            IsSystemDisk = diskNumber == DriveEnumerator.SystemDiskNumber,
+            IsSystemDisk = ProtectedDisks.IsProtected(diskNumber, ProtectedDisks.Query()),
             Letters = letters,
         };
     }
@@ -103,8 +103,7 @@ public static class DiskTargets
     /// <summary>書き込み・読み出しの対象にしてよいか確認する。問題があれば例外。</summary>
     public static void Validate(DiskInfo disk, bool allowFixed)
     {
-        if (disk.IsSystemDisk)
-            throw new VolumeFormatException($"Disk {disk.DiskNumber} はシステムドライブがある物理ディスクのため対象にできません。");
+        ProtectedDisks.EnsureNotProtected(disk.DiskNumber); // Windows・起動用パーティションのディスク。判定できなければ中止
         if (!disk.IsRemovable && !allowFixed)
             throw new VolumeFormatException($"Disk {disk.DiskNumber} はリムーバブルではなく固定ディスクとして認識されています。本当に対象にする場合は --allow-fixed を指定してください。");
         if (disk.Length <= 0)

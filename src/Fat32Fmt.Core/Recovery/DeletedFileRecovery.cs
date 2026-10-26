@@ -1,5 +1,6 @@
 using Fat32Fmt.Core.Fat32;
 using Fat32Fmt.Core.IO;
+using Fat32Fmt.Core.Windows;
 
 namespace Fat32Fmt.Core.Recovery;
 
@@ -92,6 +93,8 @@ public static class DeletedFileRecovery
     {
         var list = files.Where(f => f.Chance != RecoveryChance.Invalid).ToList();
         Directory.CreateDirectory(destination);
+        // ファイル名はカードの作り手が決められる。書いたファイルの実体が保存先の外（リンク経由など）に出ていないか毎回確かめる
+        string destinationFinal = SafePaths.ResolveFinalPath(destination, "復旧ファイルの保存先");
         long total = list.Sum(f => f.Size);
         var tracker = new ProgressTracker(progress, "削除ファイルの復旧", total);
         long done = 0;
@@ -105,6 +108,7 @@ public static class DeletedFileRecovery
             Directory.CreateDirectory(Path.GetDirectoryName(output)!);
             using (var fs = new FileStream(output, FileMode.CreateNew, FileAccess.Write))
             {
+                SafePaths.VerifyCreatedFile(fs, output, destinationFinal);
                 long offset = l.ClusterOffset(f.Entry.FirstCluster);
                 long left = f.Size;
                 while (left > 0)
@@ -200,17 +204,34 @@ public static class DeletedFileRecovery
         return data[0] == (byte)'.' && data[1] == (byte)' ' && (data[11] & 0x10) != 0;
     }
 
-    private static string SafeRelativePath(string path)
+    /// <summary>
+    /// ボリューム内のパスを、保存先の中に収まる安全な相対パスにする。
+    /// 「..」・区切り文字・ドライブ指定・ADS (:) を無効化し、制御文字や双方向制御文字を除き、
+    /// CON / NUL などの予約デバイス名には先頭に '_' を付ける。
+    /// </summary>
+    public static string SafeRelativePath(string path)
     {
         var invalid = Path.GetInvalidFileNameChars();
         var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries)
             .Select(p =>
             {
-                var chars = p.Select(c => invalid.Contains(c) ? '_' : c).ToArray();
+                var chars = TextSanitizer.Clean(p).Select(c => invalid.Contains(c) ? '_' : c).ToArray();
                 string s = new string(chars).TrimEnd('.', ' ');
-                return s.Length == 0 || s is "." or ".." ? "_" : s;
+                if (s.Length == 0 || s is "." or "..") return "_";
+                return IsReservedDeviceName(s) ? "_" + s : s;
             });
         return Path.Combine(parts.ToArray());
+    }
+
+    /// <summary>Windows の予約デバイス名（拡張子付きも含む。例: "nul.txt", "COM1.jpg"）。</summary>
+    public static bool IsReservedDeviceName(string name)
+    {
+        string stem = name.Split('.')[0].TrimEnd(' ');
+        if (stem.Length is < 3 or > 7) return false;
+        string upper = stem.ToUpperInvariant();
+        if (upper is "CON" or "PRN" or "AUX" or "NUL" or "CONIN$" or "CONOUT$") return true;
+        return upper.Length == 4 && (upper.StartsWith("COM", StringComparison.Ordinal) || upper.StartsWith("LPT", StringComparison.Ordinal))
+               && (char.IsAsciiDigit(upper[3]) || upper[3] is '¹' or '²' or '³');
     }
 
     private static string UniquePath(string path)

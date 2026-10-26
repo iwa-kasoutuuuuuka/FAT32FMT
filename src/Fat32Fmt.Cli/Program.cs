@@ -10,7 +10,7 @@ namespace Fat32Fmt.Cli;
 
 internal static class Program
 {
-    private const string Version = "1.0.0";
+    private const string Version = "1.0.1";
 
     private static int Main(string[] args)
     {
@@ -42,7 +42,7 @@ internal static class Program
                 "format" => CmdFormat(opts),
                 "image" => CmdImage(opts),
                 "verify" => CmdVerify(opts),
-                "mcp" => McpServer.Run(),
+                "mcp" => McpServer.Run(opts.AllowFixed),
                 "version" => Print($"fat32fmt {Version}"),
                 _ => Usage($"不明なコマンドです: {opts.Command}"),
             };
@@ -319,7 +319,7 @@ internal static class Program
               fat32fmt recover <X: | イメージ.img> (--to <フォルダ> | --list) [--all] [--match *.jpg] [--json]
               fat32fmt test    <X:> [--quick | --full | --scan [--write]] [--yes] [--json]
               fat32fmt bench   <X:> [--write] [--yes] [--json]
-              fat32fmt mcp
+              fat32fmt mcp [--allow-fixed]
               fat32fmt version
 
             コマンド:
@@ -346,6 +346,7 @@ internal static class Program
                          --write  書き込みも測る（破壊）。スピードクラスの判定には書き込みの測定が必要
               ※ test / bench は管理者権限が必要（無ければ UAC で昇格）。検査で問題が見つかると終了コード 4
               mcp      MCP サーバー (stdio) として起動。Claude Code / Antigravity 等から操作する用
+                         --allow-fixed  固定ディスクを対象にすることを許可（既定では AI から指定されても拒否）
 
             オプション:
               --cluster <N>      クラスタサイズ。4096 / 32K / 64K など（既定: 自動。32GB 超は 32K）

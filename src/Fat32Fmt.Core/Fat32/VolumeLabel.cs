@@ -92,7 +92,7 @@ public static class VolumeLabel
             tmp[0] = 0xE5;
         }
 
-        return OemEncoding.GetString(tmp).TrimEnd(' ', '\0');
+        return TextSanitizer.Clean(OemEncoding.GetString(tmp).TrimEnd(' ', '\0'));
     }
 
     /// <summary>Windows と同様に ASCII 英字を大文字にする(全角文字はそのまま)。</summary>
